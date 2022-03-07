@@ -66,12 +66,19 @@ BufMgr * bufMgr = new BufMgr(100);
 void createRelationForward();
 void createRelationBackward();
 void createRelationRandom();
+void createRelationSparse();
+void searchKeyOutOfRange();
+void intTestsSparse();
+void intTestsOutOfRange();
 void intTests();
 int intScan(BTreeIndex *index, int lowVal, Operator lowOp, int highVal, Operator highOp);
 void indexTests();
+void indexTestsSparse();
 void test1();
 void test2();
 void test3();
+void additionTest1();
+void additionTest2();
 void errorTests();
 void deleteRelation();
 
@@ -176,6 +183,26 @@ void test3()
 	indexTests();
 	deleteRelation();
 }
+
+void additionTest1(){
+	// search for key from -1000 to 6000 in the scenario of giving 5000 consecutive numbers 
+	// from 0 to 4999
+	std::cout << "--------------------" << std::endl;
+	std::cout << "searchKeyOutOfRange" << std::endl;
+	createRelationRandom();
+	searchKeyOutOfRange();
+	deleteRelation();
+}
+
+void additionTest2(){
+	// Sparse relations with size of 3000, instead of relations with consecutive numbers.
+	std::cout << "--------------------" << std::endl;
+	std::cout << "createRelationSparse" << std::endl;
+	createRelationSparse();
+	indexTestsSparse();
+	deleteRelation;
+}
+
 
 // -----------------------------------------------------------------------------
 // createRelationForward
@@ -340,12 +367,101 @@ void createRelationRandom()
 }
 
 // -----------------------------------------------------------------------------
+// createRelationSparse
+// -----------------------------------------------------------------------------
+
+void createRelationSparse()
+{
+  std::vector<RecordId> ridVec;
+  // destroy any old copies of relation file
+	try
+	{
+		File::remove(relationName);
+	}
+	catch(const FileNotFoundException &e)
+	{
+	}
+
+  file1 = new PageFile(relationName, true);
+
+  // initialize all of record1.s to keep purify happy
+  memset(record1.s, ' ', sizeof(record1.s));
+	PageId new_page_number;
+  Page new_page = file1->allocatePage(new_page_number);
+
+  // Set the relationSize to 3000
+  int relationSize = 3000;
+
+  // set sparse records in sparse.
+  std::vector<int> intvec(relationSize);
+  for( int i = 0; i < relationSize; i++ )
+  {
+    intvec[i] = i + 10;
+  }
+
+  // Insert a bunch of tuples into the relation.
+  for(int i = 0; i < relationSize; i++ )
+	{
+	int val = intvec[i];
+    sprintf(record1.s, "%05d string record", val);
+    record1.i = val;
+    record1.d = (double)val;
+    std::string new_data(reinterpret_cast<char*>(&record1), sizeof(record1));
+
+		while(1)
+		{
+			try
+			{
+    		new_page.insertRecord(new_data);
+				break;
+			}
+			catch(const InsufficientSpaceException &e)
+			{
+				file1->writePage(new_page_number, new_page);
+  			new_page = file1->allocatePage(new_page_number);
+			}
+		}
+  }
+
+	file1->writePage(new_page_number, new_page);
+}
+
+// -----------------------------------------------------------------------------
+// searchKeyOutOfRange
+// -----------------------------------------------------------------------------
+intTestsOutOfRange();
+	try
+	{
+		File::remove(intIndexName);
+	}
+  catch(const FileNotFoundException &e)
+  {
+  }
+}
+
+// -----------------------------------------------------------------------------
 // indexTests
 // -----------------------------------------------------------------------------
 
 void indexTests()
 {
   intTests();
+	try
+	{
+		File::remove(intIndexName);
+	}
+  catch(const FileNotFoundException &e)
+  {
+  }
+}
+
+// -----------------------------------------------------------------------------
+// indexTestsSparse
+// -----------------------------------------------------------------------------
+
+void indexTestsSparse()
+{
+  intTestsSparse();
 	try
 	{
 		File::remove(intIndexName);
@@ -372,6 +488,41 @@ void intTests()
 	checkPassFail(intScan(&index,0,GT,1,LT), 0)
 	checkPassFail(intScan(&index,300,GT,400,LT), 99)
 	checkPassFail(intScan(&index,3000,GTE,4000,LT), 1000)
+}
+
+// -----------------------------------------------------------------------------
+// intTestsOutOfRange
+// -----------------------------------------------------------------------------
+
+void intTestsOutOfRange()
+{
+  std::cout << "Create a B+ Tree index on the integer field" << std::endl;
+  BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple,i), INTEGER);
+
+	// run some tests out of range
+	checkPassFail(intScan(&index,-1000,GT,6000,LT), 5000);
+	checkPassFail(intScan(&index,-800,GTE,-100,LT), 0);
+	checkPassFail(intScan(&index,5000,GT,5100,LTE), 0);
+
+}
+
+// -----------------------------------------------------------------------------
+// intTestsSparse
+// -----------------------------------------------------------------------------
+
+void intTestsSparse()
+{
+  std::cout << "Create a B+ Tree index on the integer field" << std::endl;
+  BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple,i), INTEGER);
+
+	// run some tests
+	checkPassFail(intScan(&index,25,GT,40,LT), 1)
+	checkPassFail(intScan(&index,20,GTE,35,LTE), 2)
+	checkPassFail(intScan(&index,-3,GT,3,LT), 1)
+	checkPassFail(intScan(&index,996,GT,1001,LT), 1)
+	checkPassFail(intScan(&index,0,GT,1,LT), 0)
+	checkPassFail(intScan(&index,300,GT,400,LT), 9)
+	checkPassFail(intScan(&index,3000,GTE,4000,LT), 100)
 }
 
 int intScan(BTreeIndex * index, int lowVal, Operator lowOp, int highVal, Operator highOp)
