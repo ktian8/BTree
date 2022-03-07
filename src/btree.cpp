@@ -58,16 +58,18 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 	
 	try
 	{
-		File file = (File) BlobFile::open(outIndexName);
+		BlobFile bfile = BlobFile::open(outIndexName);
+		File *file = &bfile;
 
 		this->file = file;
-		this->headerPageNum = file.getFirstPageNo();
+		this->headerPageNum = bfile.getFirstPageNo();
 
-		badgerdb::IndexMetaInfo *meta;
-		badgerdb::Page *page;
-		this->bufMgr->readPage(file, this->headerPageNum, page);
-		*meta = (badgerdb::IndexMetaInfo) page;
-		// Read root page number from the head (first page)
+		// Read the first page which contains the meta info
+		badgerdb::Page *metaPage;
+		this->bufMgr->readPage(file, this->headerPageNum, metaPage);
+		badgerdb::IndexMetaInfo *meta = reinterpret_cast<IndexMetaInfo *>(metaPage);
+
+		// Read root page number from the head (second page)
 		this->rootPageNum = meta->rootPageNo;
 		// Unpin the page after reading
 		this->bufMgr->unPinPage(file, this->headerPageNum, false);
@@ -78,10 +80,54 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 	catch(const badgerdb::FileNotFoundException & e)
 	{
 		// build the index
+		BlobFile newIndexFile = BlobFile::create(outIndexName);
+		File *file = &bfile;
+		this->file = file;
+
+		PageId headPageNum;
+		PageId rootPageNum;
+		Page *headPage;
+		Page *rootPage;
+
+		this->bufMgr->allocPage(file, headPageNum, headPage);
+		this->bufMgr->allocPage(file, rootPageNum, rootPage);
+
+		this->headerPageNum = headPageNum;
+		badgerdb::IndexMetaInfo *metaInfo;
+		metaInfo->relationName = relationName;
+		metaInfo->attrByteOffset = attrByteOffset;
+		metaInfo->attrType = attrType;
+		metaInfo->rootPageNo = rootPageNum;
+
+		// write meta data to head page, unpinned
+		// We won't use it latter
+		headPage = reinterpret_cast<Page *>(metaInfo);
+		this->bufMgr->unPinPage(file, headPageNum, true);
+		
+		// Insert and start to build the index
+		FileScan scanner = new FileScan(relationName, this->bufMgr);
+		try
+		{
+			RecordId *rid;
+			scanner.scanNext(rid);
+
+			std::string record = scanner.getRecord();
+			char *tempRecord = record;
+			int key = &tempRecord[0] + this->attrByteOffset;
+			// todo: figure out if root is leaf node or non-leaf node
+			// todo: insert records
+		}
+		catch(const babadgerdb::EndOfFileException n& e)
+		{
+			
+		}
+		
+		
+		// unpin all the pages in the buffer pool before do this
+		this->bufMgr->flushFile(file);
 	}
 	
 }
-
 
 // -----------------------------------------------------------------------------
 // BTreeIndex::~BTreeIndex -- destructor
@@ -89,6 +135,7 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 
 BTreeIndex::~BTreeIndex()
 {
+	this->bufMgr->unPinPage(this->file, this->currentPageData, true);
 }
 
 // -----------------------------------------------------------------------------
