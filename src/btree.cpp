@@ -6,6 +6,8 @@
  */
 
 #include "btree.h"
+#include <vector>
+#include <climits>
 #include "filescan.h"
 #include "exceptions/bad_index_info_exception.h"
 #include "exceptions/bad_opcodes_exception.h"
@@ -45,7 +47,10 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 	
 	// Scanning related memebers
 	this->scanExecuting = false;
-	this->nextEntry = 0; // Need to confirm
+	this->nextEntry = INT_MAX;
+
+	this->currentPageNum = Page::INVALID_NUMBER;
+	this->currentPageData = nullptr;
 	this->lowValInt = 0;
 	this->lowValDouble = 0.0;
 	this->lowValString = "";
@@ -73,15 +78,12 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 		this->rootPageNum = meta->rootPageNo;
 		// Unpin the page after reading
 		this->bufMgr->unPinPage(file, this->headerPageNum, false);
-
-		this->currentPageNum = this->rootPageNum;
-		this->bufMgr->readPage(file, this->rootPageNum, this->currentPageData);
 	}
 	catch(const badgerdb::FileNotFoundException & e)
 	{
 		// build the index
 		BlobFile newIndexFile = BlobFile::create(outIndexName);
-		File *file = &bfile;
+		File *file = &newIndexFile;
 		this->file = file;
 
 		PageId headPageNum;
@@ -93,38 +95,73 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 		this->bufMgr->allocPage(file, rootPageNum, rootPage);
 
 		this->headerPageNum = headPageNum;
-		badgerdb::IndexMetaInfo *metaInfo;
-		metaInfo->relationName = relationName;
+
+		badgerdb::IndexMetaInfo *metaInfo = reinterpret_cast<IndexMetaInfo *>(headPage);
+
+		strcpy(metaInfo->relationName, relationName.c_str());
 		metaInfo->attrByteOffset = attrByteOffset;
 		metaInfo->attrType = attrType;
 		metaInfo->rootPageNo = rootPageNum;
 
 		// write meta data to head page, unpinned
 		// We won't use it latter
-		headPage = reinterpret_cast<Page *>(metaInfo);
 		this->bufMgr->unPinPage(file, headPageNum, true);
 		
 		// Insert and start to build the index
-		FileScan scanner = new FileScan(relationName, this->bufMgr);
+		// Scan the relation
+		FileScan *scanner = new FileScan(relationName, this->bufMgr);
+
 		try
 		{
-			RecordId *rid;
-			scanner.scanNext(rid);
+			// Read a record from the relation
+			RecordId rid;
+			scanner->scanNext(rid);
+			std::string record = scanner->getRecord();
 
-			std::string record = scanner.getRecord();
-			char *tempRecord = record;
-			int key = &tempRecord[0] + this->attrByteOffset;
-			// todo: figure out if root is leaf node or non-leaf node
-			// todo: insert records
-		}
-		catch(const babadgerdb::EndOfFileException n& e)
-		{
+			std::vector<char> writable(record.begin(), record.end());
+			writable.push_back('\0');
+			char *tempRecord = &writable[0];
+
+			void *key = reinterpret_cast<int *>(&tempRecord[0] + this->attrByteOffset);
+			int intKey = *reinterpret_cast<int*>(key);
 			
+			// Root node starts as a leaf node
+			badgerdb::LeafNodeInt *rootNode = reinterpret_cast<LeafNodeInt *>(rootPage);
+			// initialzie the key and rid array
+			size_t len = sizeof(rootNode->keyArray)/sizeof(rootNode->keyArray[0]);
+			for (size_t i = 0; i < len; i++)
+			{
+				rootNode->keyArray[i] = INT_MAX;
+			}
+			
+			// Assign key and rid for root
+			rootNode->keyArray[0] = intKey;
+			rootNode->ridArray[0] = rid;
+			rootNode->rightSibPageNo = Page::INVALID_NUMBER;
+
+			this->bufMgr->unPinPage(file, rootPageNum, true);
+			this->bufMgr->flushFile(file);
+
+			// THIS IS DANGEROUS, We Can do it only becuase scanner will 
+			// throw EndOfFileException when we reached the end of 
+			// the relation file
+			while(1) {
+				scanner->scanNext(rid);
+				record = scanner->getRecord();
+				std::vector<char> writable(record.begin(), record.end());
+				writable.push_back('\0');
+				tempRecord = &writable[0];
+				
+				key = reinterpret_cast<int *>(&tempRecord[0] + this->attrByteOffset);
+
+				this->insertEntry(key, rid);
+			}
+		}
+		catch(const EndOfFileException &e)
+		{
+			// Finish inserting all the records
 		}
 		
-		
-		// unpin all the pages in the buffer pool before do this
-		this->bufMgr->flushFile(file);
 	}
 	
 }
@@ -135,7 +172,12 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 
 BTreeIndex::~BTreeIndex()
 {
-	this->bufMgr->unPinPage(this->file, this->currentPageData, true);
+	if(this->currentPageData != nullptr && this->currentPageNum != Page::INVALID_NUMBER) {
+		this->bufMgr->unPinPage(this->file, this->currentPageNum, false);
+	}
+	// !!! Need all other pages closed
+	this->bufMgr->flushFile(this->file);
+
 }
 
 // -----------------------------------------------------------------------------
