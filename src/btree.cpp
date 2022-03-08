@@ -189,6 +189,7 @@ void BTreeIndex::insertEntry(const void *key, const RecordId rid)
 
 }
 
+
 // -----------------------------------------------------------------------------
 // BTreeIndex::startScan
 // -----------------------------------------------------------------------------
@@ -226,7 +227,7 @@ void BTreeIndex::startScan(const void* lowValParm,
 	if(firstRoot){
 		foundId = rootPageNum;
 	}else{
-		searchLeaf(lowValParm, foundId, rootPageNum, path);
+		search(foundId, rootPageNum, lowValParm, path);
 	}
 
 	Page *foundPage;
@@ -354,5 +355,27 @@ void BTreeIndex::endScan()
 	currentPageData = NULL;
 	currentPageNum = Page::INVALID_NUMBER;
 }
+
+void BTreeIndex::search(PageId &foundPageID, PageId currPageId, const void *key, std::vector<PageId> &path){
+	Page *currPage;
+	BufMgr->readPage(file, currPageId, currPage);
+	NonLeafNodeInt *currNode = (NonLeafNodeInt *)currPage;
+
+	int idx = 0;
+	int keyC = *(int *)key;
+
+	while (idx < currNode->numOfKey && currNode->keyArray[idx] <= keyC){
+		idx++
+	}
+	
+	if(currNode->level == 1){
+		foundPageID = currNode->pageNoArray[idx];
+		path.push_back(currPageId);
+	}else{
+		path.push_back(currPageId);
+		search(foundPageID, currNode->pageNoArray[idx], key, path);
+	}
+}
+
 
 }
