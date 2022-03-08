@@ -288,7 +288,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
               newNode->pageNoArray[insertIndex - 1];
           newNode->pageNoArray[insertIndex] = childEntry->pageNo;
         }
-        childEntry->set(newNode->keyArray[0], newNode->pageNoArray[0]);
+        childEntry->set(newNode->pageNoArray[0], newNode->keyArray[0]);
         newNode->level = node->level;
         // set to default
         for (int i = rightSize; i < this->nodeOccupancy; i++) {
