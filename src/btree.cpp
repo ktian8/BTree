@@ -295,7 +295,39 @@ void BTreeIndex::startScan(const void* lowValParm,
 
 void BTreeIndex::scanNext(RecordId& outRid) 
 {
+	if(scanExecuting == false){
+		throw ScanNotInitializedException();
+	}
 
+	bufMgr-> readPage(file,currentPageNum, currentPageData);
+	LeafNodeInt *currPage = NULL;
+	if(currentPageData != NULL){
+
+		currPage = (LeafNodeInt *)currentPageData;
+		int currKey = currPage->keyArray[nextEntry];
+		outRid = currPage->ridArray[nextEntry];
+
+		if((currKey > highValInt && (highOp == LTE || highOp == LT)) || (currKey == highValInt && highOp == LT)){
+			throw IndexScanCompletedException();
+		}
+
+		int end;
+		end = currPage->numOfKey - 1;
+		if(nextEntry < end){
+			nextEntry = nextEntry + 1;
+			bufMgr->unPinPage(file, currentPageNum, false);
+		}else{
+			if(currPage->rightSibPageNo == Page::INVALID_NUMBER){
+				throw IndexScanCompletedException();
+			}
+			bufMgr->unPinPage(file, currentPageNum, false);
+			currentPageNum = currPage->rightSibPageNo;
+			nextEntry = 0;
+		}
+
+	}else{
+		endScan();
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -304,7 +336,23 @@ void BTreeIndex::scanNext(RecordId& outRid)
 //
 void BTreeIndex::endScan() 
 {
+	if(scanExecuting == false){
+		throw ScanNotInitializedException();
+	}
 
+	scanExecuting = false;
+	
+	if(currentPageNum != Page::INVALID_NUMBER){
+		bufMgr->unPinPage(file, currentPageNum, false);
+	}
+
+	lowOp = LT;
+	highOp = GT;
+	lowValInt = -1;
+	highValInt = -1;
+	nextEntry = -1;
+	currentPageData = NULL;
+	currentPageNum = Page::INVALID_NUMBER;
 }
 
 }
