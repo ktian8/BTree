@@ -186,7 +186,190 @@ BTreeIndex::~BTreeIndex()
 
 void BTreeIndex::insertEntry(const void *key, const RecordId rid) 
 {
+	RIDKeyPair<int> entry;
+	entry.set(key, rid);
+	PageKeyPair<int>* childEntry = (PageKeyPair<int>*)malloc(sizeof(PageKeyPair<int>));
+	childEntry = nullptr;
+	if(this->ifRootIsLeaf){
+		insertHelper(rootNode, entry, childEntry, 0,true);
+	}else{
+		insertHelper(rootNode, entry, childEntry, 1,true);
+	}
+	
+}
 
+// -----------------------------------------------------------------------------
+// BTreeIndex::insertHelper()
+// -----------------------------------------------------------------------------
+
+void BTreeIndex::insertHelper(Page* pagePointer, RIDKeyPair<int> entry, PageKeyPair<int>* childEntry, int pageLevel, bool isRoot) 
+{
+	if(pageLevel>0){ // non-leaf node
+		NonLeafNodeInt* node = (NonLeafNodeInt*) pagePointer;
+		int index = 0;
+		for(int i = 0; i<this->nodeOccupancy-1; i++){
+			if(entry.key<node->keyArray[i]){
+				index = 0;
+			}else if(entry.key>=node->keyArray[i]&&entry.key<node->keyArray[i+1]){
+				index = i;
+			}
+		}
+		if(index==0&&entry.key>=node->keyArray[this->nodeoccupancy-1]){
+			index = this->nodeoccupancy;
+		}
+		Page* child;
+		this->bufMgr->readPage(file, node->keyArray[index], child);
+		insertHelper(child, entry, *childEntry, node->level-1, false);
+		if(childEntry==nullptr){
+			return;
+		}else{
+			if(node->keyArray[this->nodeOccupancy-1]==INT_MAX){ // space left
+				// simply insert
+				int insertIndex = this->nodeOccupancy-1;
+				while(insertIndex>0&&node->keyArray[insertIndex-1]>childEntry.key){
+					node->keyArray[insertIndex] = node->keyArray[insertIndex-1];
+					node->pageNoArray[insertIndex+1] = node->pageNoArray[insertIndex];
+					insertIndex--;
+				}
+				node->keyArray[insertIndex]= childEntry.key;
+				node->pageNoArray[insertIndex+1] = node->pageNoArray[insertIndex];
+				node->pageNoArray[insertIndex] = childEntry.pageNo;
+				childEntry = nullptr;
+			}else{ // no space left, need to split
+				int leftSize = (this->nodeOccupancy+1)/2;
+				int rightSize = this->nodeOccupancy+1 - leftSize;
+				NonLeafNodeInt* newNode = (NonLeafNodeInt*)malloc(sizeof(NonLeafNodeInt));
+				if(node->keyArray[leftSize-1]>childEntry.key){ // child key belongs to left
+					for(int i = 0; i < rightSize; i++){
+						newNode->keyArray[i] = node->keyArray[leftSize-1+i];
+						newNode->pageNoArray[i] = node->pageNoArray[leftSize-1+i];
+					}
+					newNode->pageNoArray[rightSize] = node->pageNoArray[this->nodeOccupancy];
+					for(int i = this->nodeOccupancy-1; i>=leftSize-1; i--){
+						node->keyArray[i] = INT_MAX;
+						node->pageNoArray[i] = nullptr;
+					}
+					node->pageNoArray[this->nodeOccupancy] = nullptr;
+					int insertIndex = leftSize-1;
+					while(insertIndex>0&&node->keyArray[insertIndex-1]>childEntry.key){
+						node->keyArray[insertIndex] = node->keyArray[insertIndex-1];
+						node->pageNoArray[insertIndex] = node->pageNoArray[insertIndex-1];
+						insertIndex--;
+					}
+					node->keyArray[insertIndex]= childEntry.key;
+					node->pageNoArray[insertIndex] = childEntry.pageNo;
+				}else{ // child key belongs to right;
+
+					for(int i = 0; i < rightSize-1; i++){ // left one space for child
+						newNode->keyArray[i] = node->keyArray[leftSize+i];
+						newNode->pageNoArray[i] = node->pageNoArray[leftSize+i]																										1+i];
+					}
+					newNode->pageNoArray[rightSize-1] = node->pageNoArray[this->nodeOccupancy];
+					for(int i = this->nodeOccupancy-1; i>leftSize-1; i--){
+						node->keyArray[i] = INT_MAX;
+						node->pageNoArray[i] = nullptr;
+					}
+					node->pageNoArray[this->nodeOccupancy] = nullptr;
+					int insertIndex = rightSize-1;
+					while(insertIndex>0&&node->keyArray[insertIndex-1]>childEntry.key){
+						newNode->keyArray[insertIndex] = newNode->keyArray[insertIndex-1];
+						newNode->pageNoArray[insertIndex] = newNode->pageNoArray[insertIndex-1];
+						insertIndex--;
+					}
+					newNode->keyArray[insertIndex]= childEntry.key;
+					newNode->pageNoArray[insertIndex] = newNode->pageNoArray[insertIndex-1];
+					newNode->pageNoArray[insertIndex] = childEntry.pageNo;
+				}
+				childEntry.Set(newNode->keyArray[0], newNode->pageNoArray[0]);
+				newNode->level = node->level;
+				// set to default
+				for(int i = rightSize; i <this->nodeOccupancy; i++){
+						newNode->keyArray[i] = INT_MAX;
+						newNode->pageNoArray[i+1] = nullptr;
+				}
+
+				if(isRoot){
+					NonLeafNodeInt* newRootNode = (NonLeafNodeInt*)malloc(sizeof(NonLeafNodeInt));
+					newRootNode->pageNoArray[0] = node->pageNoArray[0];
+					newRootNode->pageNoArray[1] = childEntry.pageNo;
+					newRootNode->keyArray[0] = childEntry.key;
+					newRootNode->level = node->level+1;
+					this->rootNode = newRootNode;
+					this->ifRootIsLeaf = false;
+					return;
+				}
+			}
+		}
+		
+		
+	}else{ // leaf node
+		LeafNodeInt* node = (NonLeafNodeInt*) pagePointer;
+		if(node->keyArray[this->leafOccupancy-1]==INT_MAX){ // space left
+			int insertIndex = this->leafOccupancy-1;
+			while(insertIndex>0&&node->keyArray[insertIndex-1]>childEntry.key){
+				node->keyArray[insertIndex] = node->keyArray[insertIndex-1];
+				node->ridArray[insertIndex] = node->ridArray[insertIndex-1];
+				insertIndex--;
+			}
+			node->keyArray[insertIndex]= entry.key;
+			node->ridArray[insertIndex] = entry.rid;
+			childEntry = nullptr;
+			return;
+		}else{ // need to split
+			int leftSize = (this->leafOccupancy+1)/2;
+			int rightSize = this->leafOccupancy+1 - leftSize;
+			LeafNodeInt* newNode = (LeafNodeInt*)malloc(sizeof(LeafNodeInt));
+
+			if(node->keyArray[leftSize-1]>entry.key){ // key belongs to left
+				for(int i = 0; i < rightSize; i++){
+					newNode->keyArray[i] = node->keyArray[leftSize-1+i];
+					newNode->ridArray[i] = node->ridArray[leftSize-1+i];
+				}
+				for(int i = this->leafOccupancy-1; i>=leftSize-1; i--){
+					node->keyArray[i] = INT_MAX;
+					node->ridArray[i] = nullptr;
+				}
+				int insertIndex = leftSize-1;
+				while(insertIndex>0&&node->keyArray[insertIndex-1]>entry.key){
+					node->keyArray[insertIndex] = node->keyArray[insertIndex-1];
+					node->ridArray[insertIndex] = node->ridArray[insertIndex-1];
+					insertIndex--;
+				}
+				node->keyArray[insertIndex]= entry.key;
+				node->ridArray[insertIndex] = entry.rid;
+			}else{ // child key belongs to right;
+
+				for(int i = 0; i < rightSize-1; i++){ // left one space for child
+					newNode->keyArray[i] = node->keyArray[leftSize+i];
+					newNode->ridArray[i] = node->ridArray[leftSize+i]																										1+i];
+				}
+
+				for(int i = this->leafOccupancy-1; i>leftSize-1; i--){
+					node->keyArray[i] = INT_MAX;
+					node->ridArray[i] = nullptr;
+				}
+				int insertIndex = rightSize-1;
+				while(insertIndex>0&&node->keyArray[insertIndex-1]>entry.key){
+					newNode->keyArray[insertIndex] = newNode->keyArray[insertIndex-1];
+					newNode->ridArray[insertIndex] = newNode->ridArray[insertIndex-1];
+					insertIndex--;
+				}
+				node->keyArray[insertIndex]= entry.key;
+				node->ridArray[insertIndex] = entry.rid;
+			}
+			childEntry.Set(newNode->keyArray[0], newNode->pageNoArray[0]);
+			// set to default
+			for(int i = rightSize; i <this->leafOccupancy; i++){
+				newNode->keyArray[i] = INT_MAX;
+				newNode->ridArray[i+1] = nullptr;
+			}
+			newNode->rightSibPageNo = node->rightSibPageNo;
+			node->rightSibPageNo = newNode;
+			return;
+
+
+		}
+	}
 }
 
 // -----------------------------------------------------------------------------
