@@ -228,6 +228,8 @@ class BTreeIndex {
    */
 	int			nodeOccupancy;
 
+  bool    ifRootIsLeaf;
+
 
 	// MEMBERS SPECIFIC TO SCANNING
 

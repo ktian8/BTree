@@ -127,6 +127,7 @@ BTreeIndex::BTreeIndex(const std::string & relationName,
 			
 			// Root node starts as a leaf node
 			badgerdb::LeafNodeInt *rootNode = reinterpret_cast<LeafNodeInt *>(rootPage);
+			this->ifRootIsLeaf = true;	
 			// initialzie the key and rid array
 			size_t len = sizeof(rootNode->keyArray)/sizeof(rootNode->keyArray[0]);
 			for (size_t i = 0; i < len; i++)
