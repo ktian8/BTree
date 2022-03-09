@@ -458,15 +458,16 @@ void BTreeIndex::search(PageId &foundPageID, PageId currPageId, const void *key,
 
 void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
                            const void *highValParm, const Operator highOpParm) {
+  
+  if (highOpParm != LT && highOpParm != LTE) {
+    throw BadOpcodesException();
+  }
+  
   if (lowOpParm != GT && lowOpParm != GTE) {
     throw BadOpcodesException();
   }
 
-  if (highOpParm != LT && highOpParm != LTE) {
-    throw BadOpcodesException();
-  }
-
-  if (scanExecuting == false) {
+  if (!scanExecuting) {
     endScan();
   }
 
@@ -480,18 +481,18 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
     throw BadScanrangeException();
   }
 
-  PageId foundId;
+  PageId fid;
   std::vector<PageId> path;
 
   if (this->ifRootIsLeaf) {
-    foundId = rootPageNum;
+    fid = rootPageNum;
   } else {
-    search(foundId, rootPageNum, lowValParm, path);
+    search(fid, rootPageNum, lowValParm, path);
   }
 
-  Page *foundPage;
-  bufMgr->readPage(file, foundId, foundPage);
-  LeafNodeInt *foundNode = (LeafNodeInt *)foundPage;
+  Page *fpage;
+  bufMgr->readPage(file, fid, fpage);
+  LeafNodeInt *fnode = (LeafNodeInt *)fpage;
 
   int idx = -1;
   for (int i = 0; i < this->leafOccupancy; i++) {
@@ -501,15 +502,15 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
     }
   }
 
-  while (idx == -1 && foundNode->rightSibPageNo != Page::INVALID_NUMBER) {
-    bufMgr->readPage(file, foundNode->rightSibPageNo, foundPage);
-    bufMgr->unPinPage(file, foundId, false);
-    foundId = foundNode->rightSibPageNo;
-    foundNode = (LeafNodeInt *)foundPage;
-    // bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
+  while (idx == -1 && fnode->rightSibPageNo != Page::INVALID_NUMBER) {
+    bufMgr->readPage(file, fnode->rightSibPageNo, fpage);
+    bufMgr->unPinPage(file, fid, false);
+    fid = fnode->rightSibPageNo;
+    fnode = (LeafNodeInt *)foundPage;
+    // bufMgr->unPinPage(file, fnode->rightSibPageNo, false);
 
     for (int i = 0; i < this->leafOccupancy; i++) {
-      if (lowValInt <= foundNode->keyArray[i]) {
+      if (lowValInt <= fnode->keyArray[i]) {
         idx = i;
         break;
       }
@@ -517,19 +518,19 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
   }
 
   if (idx == -1) {
-    bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
+    bufMgr->unPinPage(file, fnode->rightSibPageNo, false);
     throw NoSuchKeyFoundException();
   }
 
   if (lowOpParm == GT) {
-    if (foundNode->keyArray[idx] > lowValInt) {
-      currentPageData = foundPage;
-      currentPageNum = foundId;
+    if (fnode->keyArray[idx] > lowValInt) {
+      currentPageData = fpage;
+      currentPageNum = fid;
       nextEntry = idx;
     } else {
       if (idx <= this->leafOccupancy - 2) {
         currentPageData = foundPage;
-        currentPageNum = foundId;
+        currentPageNum = fid;
         nextEntry = idx + 1;
       } else {
         if (foundNode->rightSibPageNo != Page::INVALID_NUMBER) {
@@ -544,7 +545,7 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
     }
   } else {
     currentPageData = foundPage;
-    currentPageNum = foundId;
+    currentPageNum = fid;
     nextEntry = idx;
   }
   scanExecuting = true;
