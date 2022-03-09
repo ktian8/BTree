@@ -57,7 +57,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
   this->highValString = "";
   this->lowOp = badgerdb::Operator::LTE;
   this->highOp = badgerdb::Operator::GTE;
-
+  std::cout << "start constructor" << std::endl;
   try {
     BlobFile bfile = BlobFile::open(outIndexName);
     File *file = &bfile;
@@ -74,6 +74,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
     this->rootPageNum = meta->rootPageNo;
     // Unpin the page after reading
     this->bufMgr->unPinPage(file, this->headerPageNum, false);
+	std::cout << "start constructor 2" << std::endl;
   } catch (const badgerdb::FileNotFoundException &e) {
     // build the index
     BlobFile newIndexFile = BlobFile::create(outIndexName);
@@ -105,7 +106,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
     // Insert and start to build the index
     // Scan the relation
     FileScan *scanner = new FileScan(relationName, this->bufMgr);
-
+	std::cout << "start constructor3" << std::endl;
     try {
       // Read a record from the relation
       RecordId rid;
@@ -141,6 +142,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
       // THIS IS DANGEROUS, We Can do it only becuase scanner will
       // throw EndOfFileException when we reached the end of
       // the relation file
+	  std::cout << "before insert" << std::endl;
       while (1) {
         scanner->scanNext(rid);
         record = scanner->getRecord();
@@ -152,6 +154,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
 
         this->insertEntry(key, rid);
       }
+	  std::cout << "after insert" << std::endl;
     } catch (const EndOfFileException &e) {
       // Finish inserting all the records
     }
@@ -309,7 +312,13 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
           newRootNode->level = node->level + 1;
           this->rootPageNum = pid;
           this->ifRootIsLeaf = false;
-		  this->IndexMetaInfo->ifRootIsLeaf = false;
+		  badgerdb::Page *metaPage;  // headerpage
+    	  this->bufMgr->readPage(file, this->headerPageNum, metaPage);
+    	  badgerdb::IndexMetaInfo *meta = reinterpret_cast<IndexMetaInfo *>(metaPage);
+
+    	  meta->ifRootIsLeaf = false;
+    	  // Unpin the page after reading
+    	  this->bufMgr->unPinPage(file, this->headerPageNum, false);
           return;
         }
       }
@@ -378,7 +387,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
         node->ridArray[insertIndex] = entry.rid;
       }
       /// TODO: Leaf node has no pageNoArray
-      childEntry->set(newNode->keyArray[0], newPage);
+      childEntry->set(newNode->keyArray[0], newPID);
       // set to default
       for (int i = rightSize; i < this->leafOccupancy; i++) {
         newNode->keyArray[i] = INT_MAX;
@@ -451,7 +460,7 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
   PageId foundId;
   std::vector<PageId> path;
 
-  if (firstRoot) {
+  if (this->ifRootIsLeaf) {
     foundId = rootPageNum;
   } else {
     search(foundId, rootPageNum, lowValParm, path);

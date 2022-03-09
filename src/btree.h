@@ -127,6 +127,8 @@ struct IndexMetaInfo {
    * Page number of root page of the B+ Tree inside the file index file.
    */
   PageId rootPageNo;
+
+  bool ifRootIsLeaf;
 };
 
 /*
