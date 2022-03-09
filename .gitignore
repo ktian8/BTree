@@ -34,3 +34,7 @@
 
 badgerdb_main
 relA
+
+*.log
+
+relA.0
