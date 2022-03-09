@@ -85,7 +85,6 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
     Page *headPage;
     Page *rootPage;
 
-
     this->bufMgr->allocPage(file, headPageNum, headPage);
     this->bufMgr->allocPage(file, rootPageNum, rootPage);
 
@@ -109,15 +108,10 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
       // Read a record from the relation
       RecordId rid;
       scanner->scanNext(rid);
-      std::string record = scanner->getRecord();
 
-      std::vector<char> writable(record.begin(), record.end());
-      writable.push_back('\0');
-      char *tempRecord = &writable[0];
-
-      void *key =
-          reinterpret_cast<int *>(&tempRecord[0] + this->attrByteOffset);
-      int intKey = *reinterpret_cast<int *>(key);
+      std::string recordStr = scanner->getRecord();
+      const char *record = recordStr.c_str();
+      int key = *((int *)(record + attrByteOffset));
 
       // Root node starts as a leaf node
       badgerdb::LeafNodeInt *rootNode =
@@ -130,7 +124,8 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
       }
 
       // Assign key and rid for root
-      rootNode->keyArray[0] = intKey;
+      // rootNode->keyArray[0] = intKey;
+      rootNode->keyArray[0] = key;
       rootNode->ridArray[0] = rid;
       rootNode->rightSibPageNo = Page::INVALID_NUMBER;
 
@@ -144,14 +139,12 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
       std::cout << "before insert" << std::endl;
       while (1) {
         scanner->scanNext(rid);
-        record = scanner->getRecord();
-        std::vector<char> writable(record.begin(), record.end());
-        writable.push_back('\0');
-        tempRecord = &writable[0];
+        recordStr = scanner->getRecord();
+        const char *recordChar = recordStr.c_str();
+        int key = *((int *)(recordChar + attrByteOffset));
+        this->insertEntry(&key, rid);
 
-        key = reinterpret_cast<int *>(&tempRecord[0] + this->attrByteOffset);
-
-        this->insertEntry(key, rid);
+        // this->insertEntry(key, rid);
       }
       std::cout << "after insert" << std::endl;
     } catch (const EndOfFileException &e) {
