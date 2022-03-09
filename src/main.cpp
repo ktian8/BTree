@@ -142,9 +142,9 @@ int main(int argc, char **argv) {
   test1();
   test2();
   test3();
-  additionTest3();
-  additionTest2();
   additionTest1();
+  additionTest2();
+  additionTest3();
 
   errorTests();
 
@@ -188,7 +188,7 @@ void additionTest1() {
   // consecutive numbers from 0 to 4999
   std::cout << "--------------------" << std::endl;
   std::cout << "searchKeyOutOfRange" << std::endl;
-  createRelationRandom();
+  createRelationForward();
   searchKeyOutOfRange();
   deleteRelation();
 }
@@ -369,10 +369,13 @@ void createRelationSparse() {
   // Set the relationSize to 3000
   int relationSize = 3000;
 
+  int total = 0;
+
   // set sparse records in sparse.
   std::vector<int> intvec(relationSize);
   for (int i = 0; i < relationSize; i++) {
-    intvec[i] = i + 10;
+    total += 6;
+    intvec[i] = total;
   }
 
   // Insert a bunch of tuples into the relation.
@@ -471,9 +474,9 @@ void intTestsOutOfRange() {
                    INTEGER);
 
   // run some tests out of range
-  checkPassFail(intScan(&index, -1000, GT, 6000, LT), 5000);
+  checkPassFail(intScan(&index, -1000, GT, 3000, LT), 3000);
   checkPassFail(intScan(&index, -800, GTE, -100, LT), 0);
-  checkPassFail(intScan(&index, 5000, GT, 5100, LTE), 0);
+  checkPassFail(intScan(&index, 5000, GT, 5600, LTE), 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -485,14 +488,11 @@ void intTestsSparse() {
   BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple, i),
                    INTEGER);
 
-  // run some tests
-  checkPassFail(intScan(&index, 25, GT, 40, LT), 1);
+  // run some tests, sparse insert with step of 6
+  checkPassFail(intScan(&index, 25, GT, 40, LT), 2);
   checkPassFail(intScan(&index, 20, GTE, 35, LTE), 2);
-  checkPassFail(intScan(&index, -3, GT, 3, LT), 1);
-  checkPassFail(intScan(&index, 996, GT, 1001, LT), 1);
-  checkPassFail(intScan(&index, 0, GT, 1, LT), 0);
-  checkPassFail(intScan(&index, 300, GT, 400, LT), 9);
-  checkPassFail(intScan(&index, 3000, GTE, 4000, LT), 100);
+  checkPassFail(intScan(&index, -3, GT, 3, LT), 0);
+  checkPassFail(intScan(&index, 996, GTE, 1001, LT), 1);
 }
 
 void initReopenExistingIndex() {
