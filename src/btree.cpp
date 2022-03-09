@@ -44,7 +44,7 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
   this->nodeOccupancy = badgerdb::INTARRAYNONLEAFSIZE;
 
   // Scanning related memebers
-  this->scanExecuting = false;
+  scanExecuting = false;
   this->nextEntry = INT_MAX;
 
   this->currentPageNum = Page::INVALID_NUMBER;
@@ -124,18 +124,16 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
       }
 
       // Assign key and rid for root
-      // rootNode->keyArray[0] = intKey;
       rootNode->keyArray[0] = key;
       rootNode->ridArray[0] = rid;
       rootNode->rightSibPageNo = Page::INVALID_NUMBER;
 
-      // THIS IS DANGEROUS, We Can do it only becuase scanner will
-      // throw EndOfFileException when we reached the end of
-      // the relation file
-
       this->bufMgr->unPinPage(this->file, rootPageNum, true);
       this->bufMgr->flushFile(this->file);
 
+      // THIS IS DANGEROUS, We Can do it only becuase scanner will
+      // throw EndOfFileException when we reached the end of
+      // the relation file
       std::cout << "before insert" << std::endl;
       while (1) {
         scanner->scanNext(rid);
@@ -143,8 +141,6 @@ BTreeIndex::BTreeIndex(const std::string &relationName,
         const char *recordChar = recordStr.c_str();
         int key = *((int *)(recordChar + attrByteOffset));
         this->insertEntry(&key, rid);
-
-        // this->insertEntry(key, rid);
       }
       std::cout << "after insert" << std::endl;
     } catch (const EndOfFileException &e) {
@@ -176,8 +172,6 @@ void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
   RIDKeyPair<int> entry;
   entry.set(rid, intKey);
   PageKeyPair<int> *childEntry;
-  // PageKeyPair<int>* childEntry =
-  // (PageKeyPair<int>*)malloc(sizeof(PageKeyPair<int>)); childEntry = nullptr;
 
   // Read the root page
   Page *rootNode;
@@ -188,6 +182,8 @@ void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
   } else {
     insertHelper(rootNode, entry, childEntry, 1, true);
   }
+  this->bufMgr->unPinPage(this->file, this->rootPageNum, true);
+  this->bufMgr->flushFile(this->file);
 }
 
 // -----------------------------------------------------------------------------
@@ -214,6 +210,8 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
     Page *child;
     this->bufMgr->readPage(file, node->keyArray[index], child);
     insertHelper(child, entry, childEntry, node->level - 1, false);
+    this->bufMgr->unPinPage(file, node->keyArray[index], true);
+
     if (childEntry == nullptr) {
       return;
     } else {
@@ -233,8 +231,15 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
       } else {  // no space left, need to split
         int leftSize = (this->nodeOccupancy + 1) / 2;
         int rightSize = this->nodeOccupancy + 1 - leftSize;
-        NonLeafNodeInt *newNode =
-            (NonLeafNodeInt *)malloc(sizeof(NonLeafNodeInt));
+
+        PageId newPID;
+        Page *newPage;
+        this->bufMgr->allocPage(this->file, newPID, newPage);
+        badgerdb::NonLeafNodeInt *newNode =
+            reinterpret_cast<NonLeafNodeInt *>(newPage);
+
+        // NonLeafNodeInt *newNode =
+        // (NonLeafNodeInt *)malloc(sizeof(NonLeafNodeInt));
         if (node->keyArray[leftSize - 1] >
             childEntry->key) {  // child key belongs to left
           for (int i = 0; i < rightSize; i++) {
@@ -292,9 +297,9 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
         }
 
         if (isRoot) {
-          PageId pid;
+          PageId rootPID;
           Page *newRootPage;
-          this->bufMgr->allocPage(this->file, pid, newRootPage);
+          this->bufMgr->allocPage(this->file, rootPID, newRootPage);
           badgerdb::NonLeafNodeInt *newRootNode =
               reinterpret_cast<NonLeafNodeInt *>(newRootPage);
 
@@ -302,7 +307,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
           newRootNode->pageNoArray[1] = childEntry->pageNo;
           newRootNode->keyArray[0] = childEntry->key;
           newRootNode->level = node->level + 1;
-          this->rootPageNum = pid;
+          this->rootPageNum = rootPID;
           this->ifRootIsLeaf = false;
           badgerdb::Page *metaPage;  // headerpage
           this->bufMgr->readPage(file, this->headerPageNum, metaPage);
@@ -311,9 +316,11 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
 
           meta->ifRootIsLeaf = false;
           // Unpin the page after reading
-          this->bufMgr->unPinPage(file, this->headerPageNum, false);
+          this->bufMgr->unPinPage(file, this->headerPageNum, true);
           return;
         }
+
+        this->bufMgr->unPinPage(this->file, newPID, newPage);
       }
     }
 
@@ -335,7 +342,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
     } else {  // need to split
       int leftSize = (this->leafOccupancy + 1) / 2;
       int rightSize = this->leafOccupancy + 1 - leftSize;
-      // LeafNodeInt *newNode = (LeafNodeInt *)malloc(sizeof(LeafNodeInt));
+
       PageId newPID;
       Page *newPage;
       this->bufMgr->allocPage(this->file, newPID, newPage);
@@ -388,6 +395,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
       }
       newNode->rightSibPageNo = node->rightSibPageNo;
       node->rightSibPageNo = newPID;
+      this->bufMgr->unPinPage(this->file, newPID, true);
       return;
     }
   }
@@ -432,11 +440,11 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
     throw BadOpcodesException();
   }
 
-  if (lowOpParm != LT && lowOpParm != LTE) {
+  if (highOpParm != LT && highOpParm != LTE) {
     throw BadOpcodesException();
   }
 
-  if (scanExecuting) {
+  if (scanExecuting == false) {
     endScan();
   }
 
@@ -463,8 +471,6 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
   bufMgr->readPage(file, foundId, foundPage);
   LeafNodeInt *foundNode = (LeafNodeInt *)foundPage;
 
-  bufMgr->unPinPage(file, foundId, false);
-
   int idx = -1;
   for (int i = 0; i < this->leafOccupancy; i++) {
     if (lowValInt <= foundNode->keyArray[i]) {
@@ -475,9 +481,10 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
 
   while (idx == -1 && foundNode->rightSibPageNo != Page::INVALID_NUMBER) {
     bufMgr->readPage(file, foundNode->rightSibPageNo, foundPage);
+    bufMgr->unPinPage(file, foundId, false);
     foundId = foundNode->rightSibPageNo;
     foundNode = (LeafNodeInt *)foundPage;
-    bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
+    // bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
 
     for (int i = 0; i < this->leafOccupancy; i++) {
       if (lowValInt <= foundNode->keyArray[i]) {
@@ -488,6 +495,7 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
   }
 
   if (idx == -1) {
+    bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
     throw NoSuchKeyFoundException();
   }
 
@@ -507,6 +515,7 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
           currentPageNum = foundNode->rightSibPageNo;
           nextEntry = 0;
         } else {
+          // bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
           throw NoSuchKeyFoundException();
         }
       }
@@ -517,6 +526,7 @@ void BTreeIndex::startScan(const void *lowValParm, const Operator lowOpParm,
     nextEntry = idx;
   }
   scanExecuting = true;
+  bufMgr->unPinPage(file, foundNode->rightSibPageNo, false);
 }
 
 // -----------------------------------------------------------------------------
@@ -537,18 +547,18 @@ void BTreeIndex::scanNext(RecordId &outRid) {
 
     if ((currKey > highValInt && (highOp == LTE || highOp == LT)) ||
         (currKey == highValInt && highOp == LT)) {
+      bufMgr->unPinPage(file, currentPageNum, false);
       throw IndexScanCompletedException();
     }
 
     int end = this->leafOccupancy - 1;
     if (nextEntry < end) {
       nextEntry = nextEntry + 1;
-      bufMgr->unPinPage(file, currentPageNum, false);
     } else {
       if (currPage->rightSibPageNo == Page::INVALID_NUMBER) {
+        bufMgr->unPinPage(file, currentPageNum, false);
         throw IndexScanCompletedException();
       }
-      bufMgr->unPinPage(file, currentPageNum, false);
       currentPageNum = currPage->rightSibPageNo;
       nextEntry = 0;
     }
