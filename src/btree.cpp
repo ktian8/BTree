@@ -1,9 +1,9 @@
 /**
  * @author See Contributors.txt for code contributors and overview of BadgerDB.
  *
- * Group member1: name: Xingpeng Sun studentID:9081193444
- * Group member2: name: Xiaohan Shen studentID:9081574403
- * Group member3: name: Haozhan Yuan studentID:9081707631
+ * Group member1: name: Xianfu Luo studentID:9082704058
+ * Group member2: name: Kexin Tian studentID:9080135420
+ * Group member3: name: Haoming Meng studentID:9081272321
  *
  * @section LICENSE
  * Copyright (c) 2012 Database Group, Computer Sciences Department, University
@@ -146,13 +146,13 @@ void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
   bufMgr->readPage(file, rootPageNum, rootPage);
   RIDKeyPair<int> recordInserted;
   recordInserted.set(rid, *((int *)key));
-  PageKeyPair<int> *entryPushedUp = nullptr;
+  PageKeyPair<int> *childEntry = nullptr;
 
   if (initialRootPageNum != rootPageNum) {
     recursiveInsert(rootPage, rootPageNum, false, recordInserted,
-                    entryPushedUp);
+                    childEntry);
   } else {
-    recursiveInsert(rootPage, rootPageNum, true, recordInserted, entryPushedUp);
+    recursiveInsert(rootPage, rootPageNum, true, recordInserted, childEntry);
   }
 }
 
@@ -165,23 +165,23 @@ void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
  * nonleaf node
  * @param recordInserted const RIDKeyPair<int>, data entry that will be inserted
  * (RIDKeyPair)
- * @param entryPushedUp PageKeyPair<int>, the new pushed-up entry after
+ * @param childEntry PageKeyPair<int>, the new pushed-up entry after
  * splitting. Set to null if no split
  */
 void BTreeIndex::recursiveInsert(Page *currentPage, PageId currentPageNum,
                                  bool isLeaf,
                                  const RIDKeyPair<int> recordInserted,
-                                 PageKeyPair<int> *&entryPushedUp) {
+                                 PageKeyPair<int> *&childEntry) {
   // if current node is a leaf node, insert
   if (isLeaf) {
     LeafNodeInt *leafNode = (LeafNodeInt *)currentPage;
     // if the page is full, split the full leaf node
     if (leafNode->ridArray[leafOccupancy - 1].page_number != 0) {
-      splitLeafNode(leafNode, currentPageNum, entryPushedUp, recordInserted);
+      splitLeafNode(leafNode, currentPageNum, childEntry, entry);
       // the page is not full, insert
     } else {
       insertLeafNode(leafNode, recordInserted);
-      entryPushedUp = nullptr;
+      childEntry = nullptr;
       bufMgr->unPinPage(file, currentPageNum, true);
     }
     // if current node is a non-leaf node
@@ -211,17 +211,17 @@ void BTreeIndex::recursiveInsert(Page *currentPage, PageId currentPageNum,
     nextChildNodeNum = currentNode->pageNoArray[ptrIndex];
     bufMgr->readPage(file, nextChildNodeNum, nextChildPage);
     recursiveInsert(nextChildPage, nextChildNodeNum, childIsLeaf,
-                    recordInserted, entryPushedUp);
+                    recordInserted, childEntry);
 
     // if an entry needs to be pushed up and the node needs to be splited
-    if (entryPushedUp != nullptr) {
+    if (childEntry != nullptr) {
       // if the current page is full
       if (currentNode->pageNoArray[nodeOccupancy] != 0) {
-        splitNonLeafNode(currentNode, currentPageNum, entryPushedUp);
+        splitNonLeafNode(currentNode, currentPageNum, childEntry);
       } else {
-        // insert the entryPushedUp to current page
-        insertNonLeafNode(currentNode, entryPushedUp);
-        entryPushedUp = nullptr;
+        // insert the childEntry to current page
+        insertNonLeafNode(currentNode, childEntry);
+        childEntry = nullptr;
         // finish the insert process, unpin current page
         bufMgr->unPinPage(file, currentPageNum, true);
       }
@@ -348,11 +348,11 @@ void BTreeIndex::splitLeafNode(LeafNodeInt *leafNode, PageId leafPageNum,
  *
  * @param origNode is the non-leaf node that needs to be split
  * @param origPageNum is the page id of origNode
- * @param entryPushedUp contains an entry that is pushed up after splitting the
+ * @param childEntry contains an entry that is pushed up after splitting the
  * node
  */
 void BTreeIndex::splitNonLeafNode(NonLeafNodeInt *origNode, PageId origPageNum,
-                                  PageKeyPair<int> *&entryPushedUp) {
+                                  PageKeyPair<int> *&childEntry) {
   PageId newPageNum;
   Page *newPage;
   bufMgr->allocPage(file, newPageNum, newPage);
@@ -361,14 +361,14 @@ void BTreeIndex::splitNonLeafNode(NonLeafNodeInt *origNode, PageId origPageNum,
   int pushedUpIndex = nodeOccupancy / 2;
   // if even number of keys
   if (nodeOccupancy % 2 == 0) {
-    if (entryPushedUp->key >= origNode->keyArray[nodeOccupancy / 2]) {
+    if (childEntry->key >= origNode->keyArray[nodeOccupancy / 2]) {
       pushedUpIndex = nodeOccupancy / 2;
     } else {
       pushedUpIndex = nodeOccupancy / 2 - 1;
     }
   }
-  PageKeyPair<int> pushedUpEntry;
-  pushedUpEntry.set(newPageNum, origNode->keyArray[pushedUpIndex]);
+  PageKeyPair<int> newChildEntry;
+  newChildEntry.set(newPageNum, origNode->keyArray[pushedUpIndex]);
   // Move the larger half of the node to the new node
   for (int i = 0; i < nodeOccupancy - pushedUpIndex - 1; ++i) {
     newNode->keyArray[i] = origNode->keyArray[i + pushedUpIndex + 1];
@@ -382,16 +382,16 @@ void BTreeIndex::splitNonLeafNode(NonLeafNodeInt *origNode, PageId origPageNum,
   origNode->keyArray[pushedUpIndex] = 0;
   origNode->pageNoArray[pushedUpIndex] = (PageId)0;
   // insert the pushed up entry
-  if (entryPushedUp->key < newNode->keyArray[0]) {
-    insertNonLeafNode(origNode, entryPushedUp);
+  if (childEntry->key < newNode->keyArray[0]) {
+    insertNonLeafNode(origNode, childEntry);
   } else {
-    insertNonLeafNode(newNode, entryPushedUp);
+    insertNonLeafNode(newNode, childEntry);
   }
-  entryPushedUp = &pushedUpEntry;
+  childEntry = &newChildEntry;
 
   // if the original node is the root node
   if (origPageNum == rootPageNum) {
-    updateRootNode(origPageNum, entryPushedUp);
+    updateRootNode(origPageNum, childEntry);
   }
   bufMgr->unPinPage(file, origPageNum, true);
   bufMgr->unPinPage(file, newPageNum, true);
@@ -402,10 +402,10 @@ void BTreeIndex::splitNonLeafNode(NonLeafNodeInt *origNode, PageId origPageNum,
  * root node
  *
  * @param origRootPageId is the page id of the pointer to the original root page
- * @param entryPushedUp is the entry that is pushed up after splitting
+ * @param childEntry is the entry that is pushed up after splitting
  */
 void BTreeIndex::updateRootNode(PageId origRootPageId,
-                                PageKeyPair<int> *entryPushedUp) {
+                                PageKeyPair<int> *childEntry) {
   PageId newRootPageNum;
   // Updates tree meta information
   Page *metaPage;
@@ -419,8 +419,8 @@ void BTreeIndex::updateRootNode(PageId origRootPageId,
   NonLeafNodeInt *newRootPage = (NonLeafNodeInt *)newRoot;
   // Update new root's information
   newRootPage->pageNoArray[0] = origRootPageId;
-  newRootPage->pageNoArray[1] = entryPushedUp->pageNo;
-  newRootPage->keyArray[0] = entryPushedUp->key;
+  newRootPage->pageNoArray[1] = childEntry->pageNo;
+  newRootPage->keyArray[0] = childEntry->key;
   newRootPage->level = (initialRootPageNum != rootPageNum) ? 0 : 1;
   rootPageNum = newRootPageNum;
 
