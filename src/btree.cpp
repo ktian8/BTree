@@ -309,6 +309,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
           newRootNode->level = node->level + 1;
           this->rootPageNum = pid;
           this->ifRootIsLeaf = false;
+		  this->IndexMetaInfo->ifRootIsLeaf = false;
           return;
         }
       }
@@ -377,7 +378,7 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
         node->ridArray[insertIndex] = entry.rid;
       }
       /// TODO: Leaf node has no pageNoArray
-      childEntry->set(newNode->keyArray[0], newNode->pageNoArray[0]);
+      childEntry->set(newNode->keyArray[0], newPage);
       // set to default
       for (int i = rightSize; i < this->leafOccupancy; i++) {
         newNode->keyArray[i] = INT_MAX;
