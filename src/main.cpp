@@ -142,9 +142,10 @@ int main(int argc, char **argv) {
   test1();
   test2();
   test3();
-  additionTest1();
-  additionTest2();
   additionTest3();
+  additionTest2();
+  additionTest1();
+
   errorTests();
 
   delete bufMgr;
@@ -211,7 +212,6 @@ void additionTest3() {
   reopenExistingIndexTest();
   deleteRelation();
 }
-
 
 // -----------------------------------------------------------------------------
 // createRelationForward
