@@ -395,6 +395,28 @@ void BTreeIndex::insertHelper(Page *pagePointer, RIDKeyPair<int> entry,
       }
       newNode->rightSibPageNo = node->rightSibPageNo;
       node->rightSibPageNo = newPID;
+      if (isRoot) {
+        PageId rootPID;
+        Page *newRootPage;
+        this->bufMgr->allocPage(this->file, rootPID, newRootPage);
+        badgerdb::NonLeafNodeInt *newRootNode =
+            reinterpret_cast<NonLeafNodeInt *>(newRootPage);
+
+        newRootNode->pageNoArray[0] = this->rootPageNum;
+        newRootNode->pageNoArray[1] = childEntry->pageNo;
+        newRootNode->keyArray[0] = childEntry->key;
+        newRootNode->level = 1;
+        this->rootPageNum = rootPID;
+        this->ifRootIsLeaf = false;
+        badgerdb::Page *metaPage;  // headerpage
+        this->bufMgr->readPage(file, this->headerPageNum, metaPage);
+        badgerdb::IndexMetaInfo *meta =
+            reinterpret_cast<IndexMetaInfo *>(metaPage);
+
+        meta->ifRootIsLeaf = false;
+        // Unpin the page after reading
+        this->bufMgr->unPinPage(file, this->headerPageNum, true);
+        }
       this->bufMgr->unPinPage(this->file, newPID, true);
       return;
     }
