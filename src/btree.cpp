@@ -556,11 +556,11 @@ void BTreeIndex::scanNext(RecordId &outRid) {
   if (current->ridArray[nextEntry].page_number == 0 ||
       nextEntry == this->leafOccupancy - 1) {
     // if we tried all pages in this leaf, go to the right one
-    this->bufMgr->unPinPage(this->file, currentPageNum, false);
     if (current->rightSibPageNo == 0) {
       // if there is no right leaf
       throw IndexScanCompletedException();
     }
+    this->bufMgr->unPinPage(this->file, currentPageNum, false);
 
     // change the current leaf to the right one
     this->currentPageNum = current->rightSibPageNo;
@@ -580,23 +580,20 @@ void BTreeIndex::scanNext(RecordId &outRid) {
     key_index = current->keyArray[nextEntry];
   }
   // four cases for the combination of GT,GTE,LT and LTE
-  if (lowOp == GT && highOp == LT && current->keyArray[nextEntry] > lowValInt &&
-      current->keyArray[nextEntry] < highValInt) {
+  if (lowOp == GT && highOp == LT && key_index > lowValInt &&
+      key_index < highValInt) {
     outRid = current->ridArray[nextEntry];
     nextEntry++;
-  } else if (lowOp == GTE && highOp == LT &&
-             current->keyArray[nextEntry] >= lowValInt &&
-             current->keyArray[nextEntry] < highValInt) {
+  } else if (lowOp == GTE && highOp == LT && key_index >= lowValInt &&
+             key_index < highValInt) {
     outRid = current->ridArray[nextEntry];
     nextEntry++;
-  } else if (lowOp == GT && highOp == LTE &&
-             current->keyArray[nextEntry] > lowValInt &&
-             current->keyArray[nextEntry] <= highValInt) {
+  } else if (lowOp == GT && highOp == LTE && key_index > lowValInt &&
+             key_index <= highValInt) {
     outRid = current->ridArray[nextEntry];
     nextEntry++;
-  } else if (lowOp == GTE && highOp == LTE &&
-             current->keyArray[nextEntry] >= lowValInt &&
-             current->keyArray[nextEntry] <= highValInt) {
+  } else if (lowOp == GTE && highOp == LTE && key_index >= lowValInt &&
+             key_index <= highValInt) {
     outRid = current->ridArray[nextEntry];
     nextEntry++;
   } else {

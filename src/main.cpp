@@ -474,7 +474,7 @@ void intTestsOutOfRange() {
                    INTEGER);
 
   // run some tests out of range
-  checkPassFail(intScan(&index, -1000, GT, 3000, LT), 3000);
+  checkPassFail(intScan(&index, -1000, GT, 6000, LT), 5000);
   checkPassFail(intScan(&index, -800, GTE, -100, LT), 0);
   checkPassFail(intScan(&index, 5000, GT, 5600, LTE), 0);
 }
