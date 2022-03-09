@@ -70,7 +70,7 @@ void createRelationForward();
 void createRelationBackward();
 void createRelationRandom();
 void createRelationSparse();
-void searchKeyOutOfRange();
+void initReopenExistingIndex();
 void intTestsSparse();
 void intTestsOutOfRange();
 void intTests();
@@ -78,11 +78,15 @@ int intScan(BTreeIndex *index, int lowVal, Operator lowOp, int highVal,
             Operator highOp);
 void indexTests();
 void indexTestsSparse();
+void reopenExistingIndexTest();
+void searchKeyOutOfRange();
 void test1();
 void test2();
 void test3();
 void additionTest1();
 void additionTest2();
+void additionTest3();
+void additionTest4();
 void errorTests();
 void deleteRelation();
 
@@ -138,6 +142,9 @@ int main(int argc, char **argv) {
   test1();
   test2();
   test3();
+  additionTest1();
+  additionTest2();
+  additionTest3();
   errorTests();
 
   delete bufMgr;
@@ -194,6 +201,16 @@ void additionTest2() {
   indexTestsSparse();
   deleteRelation();
 }
+
+void additionTest3() {
+  // Create a relation with tuples valued 0 to relationSize in random order and
+  // try to reopen the index file
+  createRelationRandom();
+  reopenExistingIndexTest();
+  deleteRelation();
+}
+
+void additionTest4() {}
 
 // -----------------------------------------------------------------------------
 // createRelationForward
@@ -404,6 +421,26 @@ void indexTestsSparse() {
 }
 
 // -----------------------------------------------------------------------------
+// searchKeyOutOfRange
+/// TODO: Figure out why this code is at here
+// -----------------------------------------------------------------------------
+void searchKeyOutOfRange() {
+  intTestsOutOfRange();
+  try {
+    File::remove(intIndexName);
+  } catch (const FileNotFoundException &e) {
+  }
+}
+
+void reopenExistingIndexTest() {
+  initReopenExistingIndex();
+  try {
+    File::remove(intIndexName);
+  } catch (const FileNotFoundException &e) {
+  }
+}
+
+// -----------------------------------------------------------------------------
 // intTests
 // -----------------------------------------------------------------------------
 
@@ -438,18 +475,6 @@ void intTestsOutOfRange() {
 }
 
 // -----------------------------------------------------------------------------
-// searchKeyOutOfRange
-/// TODO: Figure out why this code is at here
-// -----------------------------------------------------------------------------
-void searchKeyOutOfRange() {
-  intTestsOutOfRange();
-  try {
-    File::remove(intIndexName);
-  } catch (const FileNotFoundException &e) {
-  }
-}
-
-// -----------------------------------------------------------------------------
 // intTestsSparse
 // -----------------------------------------------------------------------------
 
@@ -466,6 +491,25 @@ void intTestsSparse() {
                   checkPassFail(intScan(&index, 0, GT, 1, LT), 0) checkPassFail(
                       intScan(&index, 300, GT, 400, LT), 9)
                       checkPassFail(intScan(&index, 3000, GTE, 4000, LT), 100)
+}
+
+void initReopenExistingIndex() {
+  std::cout << "Create a B+ Tree index on the integer field" << std::endl;
+  BTreeIndex preIndex(relationName, intIndexName, bufMgr, offsetof(tuple, i),
+                      INTEGER);
+
+  std::cout << "Read from the exisitng index" << std::endl;
+  BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple, i),
+                   INTEGER);
+
+  // run some tests
+  checkPassFail(intScan(&index, 25, GT, 40, LT), 14)
+      checkPassFail(intScan(&index, 20, GTE, 35, LTE), 16)
+          checkPassFail(intScan(&index, -3, GT, 3, LT), 3)
+              checkPassFail(intScan(&index, 996, GT, 1001, LT), 4)
+                  checkPassFail(intScan(&index, 0, GT, 1, LT), 0) checkPassFail(
+                      intScan(&index, 300, GT, 400, LT), 99)
+                      checkPassFail(intScan(&index, 3000, GTE, 4000, LT), 1000)
 }
 
 int intScan(BTreeIndex *index, int lowVal, Operator lowOp, int highVal,
